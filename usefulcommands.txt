@@ -1,0 +1,17 @@
+# Remove all the topics to start from new
+kafka-topics --delete --topic "arm.*" --zookeeper localhost:2181
+
+# List all the available topics
+kafka-topics --list --zookeeper localhost:2181
+
+# CLI consumer to test the kafka connector
+kafka-console-consumer --topic arm.jdbc.v2.stations --bootstrap-server localhost:9092 --from-beginning
+
+# Execute the producers
+python ./producers/simulation.py
+
+# Execute the kafka connector alone
+python ./connector.py
+
+# Execute the faust application (from the folder where faust_stream.py file is)
+faust -A faust_stream worker -l info

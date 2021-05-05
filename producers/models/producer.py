@@ -9,6 +9,11 @@ from confluent_kafka.avro import AvroProducer
 
 logger = logging.getLogger(__name__)
 
+BROKER_URL = "PLAINTEXT://localhost:9092"
+SCHEMA_REGISTRY_URL = "http://localhost:8081"
+ZOOKEEPER_URL = "localhost:2181"
+
+
 
 class Producer:
     """Defines and provides common functionality amongst Producers"""
@@ -33,14 +38,17 @@ class Producer:
 
         #
         #
-        # TODO: Configure the broker properties below. Make sure to reference the project README
-        # and use the Host URL for Kafka and Schema Registry!
+        # Taking from https://docs.confluent.io/platform/current/installation/configuration/broker-configs.html
+        # and 
+        # http://kafka.apache.org/documentation.html#brokerconfigs
         #
         #
         self.broker_properties = {
-            # TODO
-            # TODO
-            # TODO
+            "broker.id": 1,
+            "bootstrap.servers": BROKER_URL,
+            "log.dirs":"/tmp/kafka-logs",
+            "schema.registry.url" : SCHEMA_REGISTRY_URL,
+            "zookeeper.connect" : ZOOKEEPER_URL,
         }
 
         # If the topic does not already exist, try to create it
@@ -48,32 +56,42 @@ class Producer:
             self.create_topic()
             Producer.existing_topics.add(self.topic_name)
 
-        # TODO: Configure the AvroProducer
-        # self.producer = AvroProducer(
-        # )
+        # Taken from https://docs.confluent.io/platform/current/clients/confluent-kafka-python/html/index.html#confluent_kafka.avro.AvroProducer
+        self.producer = AvroProducer(config=self.get_subdict(["bootstrap.servers", "schema.registry.url"]), 
+            default_key_schema=key_schema, 
+            default_value_schema=value_schema
+        )
+        logger.info(f"Producer created with topic name {self.topic_name}")
 
+    
+    def get_subdict(self, keys):
+        return {k:self.broker_properties[k] for k in keys}
+        
     def create_topic(self):
         """Creates the producer topic if it does not already exist"""
-        #
-        #
-        # TODO: Write code that creates the topic for this producer if it does not already exist on
-        # the Kafka Broker.
-        #
-        #
-        logger.info("topic creation kafka integration incomplete - skipping")
+        
+        # https://docs.confluent.io/platform/current/clients/confluent-kafka-python/html/index.html#pythonclient-adminclient
+        adminclient = AdminClient(self.get_subdict(["bootstrap.servers"]))
+        nt = NewTopic(
+                topic=self.topic_name,
+                num_partitions=self.num_partitions,
+                replication_factor=self.num_replicas)
+        
+        # https://docs.confluent.io/platform/current/clients/confluent-kafka-python/html/index.html#confluent_kafka.admin.AdminClient
+        futures = adminclient.create_topics([ nt ])
+
+        # As in the Kafka basics first example
+        for topic, future in futures.items():
+            try:
+                future.result()
+            except Exception as e:
+                logger.error(f"failed to create topic {self.topic_name}: {e}") 
+ 
+
 
     def time_millis(self):
         return int(round(time.time() * 1000))
 
     def close(self):
-        """Prepares the producer for exit by cleaning up the producer"""
-        #
-        #
-        # TODO: Write cleanup code for the Producer here
-        #
-        #
-        logger.info("producer close incomplete - skipping")
+        self.producer.flush()
 
-    def time_millis(self):
-        """Use this function to get the key for Kafka Events"""
-        return int(round(time.time() * 1000))
