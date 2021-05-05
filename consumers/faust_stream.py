@@ -3,9 +3,9 @@ import logging
 
 import faust
 
-
 logger = logging.getLogger(__name__)
 
+from version import get_version
 
 # Faust will ingest records from Kafka in this format
 class Station(faust.Record):
@@ -28,30 +28,43 @@ class TransformedStation(faust.Record):
     order: int
     line: str
 
-
-# TODO: Define a Faust Stream that ingests data from the Kafka Connect stations topic and
-#   places it into a new topic with only the necessary information.
+# Init the faust app that will read in the stream from kafka connect and write out to a new topic
 app = faust.App("stations-stream", broker="kafka://localhost:9092", store="memory://")
-# TODO: Define the input Kafka Topic. Hint: What topic did Kafka Connect output to?
-# topic = app.topic("TODO", value_type=Station)
-# TODO: Define the output Kafka Topic
-# out_topic = app.topic("TODO", partitions=1)
-# TODO: Define a Faust Table
-#table = app.Table(
-#    # "TODO",
-#    # default=TODO,
-#    partitions=1,
-#    changelog_topic=out_topic,
-#)
+# Topic from which to read
+topic = app.topic(f"arm.jdbc.v{get_version()}.stations", value_type=Station)
+# Topic to which to write
+out_topic = app.topic(f"arm.faust.v{get_version()}.stations.transformed", value_type=TransformedStation, partitions=1 )
+
+table = app.Table(
+    f"arm.faust.v{get_version()}.stations.table",
+    default=int,
+    partitions=1,
+    changelog_topic=out_topic,
+)
 
 
-#
-#
-# TODO: Using Faust, transform input `Station` records into `TransformedStation` records. Note that
-# "line" is the color of the station. So if the `Station` record has the field `red` set to true,
-# then you would set the `line` of the `TransformedStation` record to the string `"red"`
-#
-#
+# Using Faust, transforming input `Station` records into `TransformedStation` records.
+# Example : If the `Station` record has the field `red` set to true, then set the `line` of the `TransformedStation` record to the string `"red"`
+
+@app.agent(topic)
+async def transform_station(station_events):
+    async for station in station_events:
+        if station.red:
+            new_line = "red"
+        elif station.blue:
+            new_line = "blue"
+        elif station.green:
+            new_line = "green"
+        else:
+            new_line = "null"
+        logger.info(f"Faust transforming into {new_line}")
+        new_station = TransformedStation(
+            station_id=station.station_id,
+            station_name=station.station_name,
+            order=station.order,
+            line=new_line
+        )
+        await out_topic.send(value=new_station)
 
 
 if __name__ == "__main__":
